@@ -9,6 +9,7 @@ from kivy.core.window import Window
 from kivy.logger import Logger
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
+from kivy.uix.checkbox import CheckBox
 from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.label import Label
 from kivy.uix.textinput import TextInput
@@ -34,32 +35,13 @@ def initialize():
 NODE_HELD = False
 
 def m_todo_title(todo):
-    return f"[font=Inconsolata][ref=check][{'x' if todo['checked'] else ' '}][/ref] [ref=addchild][+][/ref][/font] [ref=title]{todo['title']}[/ref]"
+    title = f"[ref=title]{todo['title']}[/ref]"
+    if todo['checked']:
+        title = f"[s]{title}[/s]"
+    return f"[font=Inconsolata][ref=check][{'x' if todo['checked'] else ' '}][/ref] [ref=addchild][+][/ref][/font] {title}"
+
 def m_todo_plus(todo):
     return "[ref=addchild][font=Inconsolata][+][/font][/ref]"
-
-# def _node_held(inst, ev, todo):
-#     Logger.info(f"HHHHHHHHHELD A NOTE {todo['id']}")
-
-# def _node_down(inst, ev, todo):
-#     global NODE_HELD
-#     NODE_HELD = True
-#     if ev.is_triple_tap:
-#         Logger.info(f"T T T TRIPLE TAP {todo['id']}")
-#     elif ev.is_double_tap:
-#         Logger.info(f"D D DOUBLE TAP {todo['id']}")
-#         if model.todo_update(todo['id'], check=(not todo['checked'])):
-#             todo['checked'] = not todo['checked']
-#             inst.text=m_todo_title(todo)
-#     else:
-#         Logger.info(f"TOuCHED A nOdE {todo['id']}")
-#         Clock.schedule_once(lambda dt: _node_held(inst, ev, todo), 1.5)
-
-# def _node_up(inst, ev, todo):
-#     global NODE_HELD
-#     NODE_HELD = False
-#     Logger.info(f"... UN touched {todo['id']}")
-#     inst.show_note_dialog()
 
 
 def _link(inst, ref, todo):
@@ -78,8 +60,12 @@ def _link(inst, ref, todo):
 
 def add_todo_body(node, todo):
     if todo['body']:
-        body_node = TreeViewLabel(text=todo['body'], markup=True)
-        root.add_node(body_node, node)
+        body_node = TreeViewLabel(
+            text=f"[ref=edit][i]{todo['body']}[/i][/ref]",
+            markup=True,
+            on_ref_press=lambda inst, ev: _link(inst, ev, todo))
+        node.root.add_node(body_node, node)
+        body_node.show_note_dialog = node.show_note_dialog
         node.body_node = body_node
 
 def add_todo_node(root, parent, todo):
@@ -94,6 +80,8 @@ def add_todo_node(root, parent, todo):
     return node
 
 def add_subtree(root, parent, todo):
+    if todo['deleted']:
+        return None
     node = add_todo_node(root, parent, todo)
     if todo['children']:
         for child in todo['children']:
@@ -101,14 +89,11 @@ def add_subtree(root, parent, todo):
     return node
 
 
-class TreeViewBox(BoxLayout, TreeViewNode):
-    pass
-
 
 class EditDialog:
     def __init__(self, root):
         self.root = root
-        self.container = TreeViewBox(orientation="vertical", size_hint=(1, 0.25), pos=(0,0))
+        self.container = BoxLayout(orientation="vertical", size_hint=(1, 0.3), pos=(0,Window.height / 2))
         self.title_input = TextInput(text="")
         self.body_input = TextInput(text="", multiline=True)
         btn_box = BoxLayout(orientation="horizontal")
@@ -128,7 +113,7 @@ class EditDialog:
         btn_box.add_widget(self.ok)
 
     def on_delete(self):
-        model.todo_delete(self.current_todo['id'])
+        model.todo_update(self.current_todo['id'], delete=True)
         self.target_inst.root.remove_node(self.target_inst)
         self.root.remove_widget(self.container)
 
@@ -160,7 +145,7 @@ class EditDialog:
             else:
                 if self.current_todo['body']:
                     Logger.info("  FRESHLY FILLED BODY, ADDING NODE")
-                    add_todo_body(self.target_inst.root, self.target_inst, self.current_todo)
+                    add_todo_body(self.target_inst, self.current_todo)
             self.on_save = None
             self.current_todo = None
         self.root.remove_widget(self.container)
@@ -172,10 +157,23 @@ class EditDialog:
             self.body_input.text = ""
             self.delete.disabled = True
             return
+        self.delete.disabled = False
         self.current_todo = todo
         self.target_inst = inst
         self.title_input.text = todo['title']
         self.body_input.text = todo['body'] or ""
+
+
+def Filters(parent):
+    box = BoxLayout(orientation="horizontal", pos=(0,0), size_hint=(1, 0.1))
+    labels = [Label(text="Unchecked"), Label(text="Checked"), Label(text="Deleted")]
+    checks = [CheckBox(active=True), CheckBox(active=True), CheckBox()]
+
+    for lbl, c in zip(labels, checks):
+        box.add_widget(lbl)
+        box.add_widget(c)
+
+    return box
 
 
 class TodoTreeApp(App):
@@ -188,15 +186,26 @@ class TodoTreeApp(App):
     def build(self):
         root = FloatLayout()
         tree = TreeView(hide_root=True, pos=(0,0))
+        # filters = Filters(root)
+        # root.add_widget(filters)
         dialog = EditDialog(root)
+
         def __show_note_dialog(inst, todo=None, parent_id=None):
             try:
                 if todo is not None:
                     dialog.edit(inst, todo, lambda changes: model.todo_update(todo['id'], **changes))
+                elif parent_id is None:
+                    dialog.edit(inst, None, lambda changes: (
+                        todo := model.todo_add(changes['title'], changes['body'], parent_id=parent_id),
+                        tmp := tree.children[0],
+                        tree.remove_node(tmp),
+                        add_todo_node(inst.root, None, todo),
+                        tree.add_node(tmp)
+                    ))
                 else:
                     dialog.edit(inst, None, lambda changes: (
-                        model.todo_add(changes['title'], changes['body'], parent_id=parent_id),
-                        inst.
+                        todo := model.todo_add(changes['title'], changes['body'], parent_id=parent_id),
+                        add_todo_node(inst.root, inst, todo),
                     ))
                 root.add_widget(dialog.container)
             except kivy.uix.widget.WidgetException:
@@ -207,10 +216,13 @@ class TodoTreeApp(App):
 
         for todo in model.todo_tree():
             add_subtree(tree, None, todo)
-        tree.add_node(TreeViewLabel(
+
+        top_level_add_plus = TreeViewLabel(
             text="[font=Inconsolata][ref=addchild][+][/ref][/font]", markup=True,
             on_ref_press=lambda inst, ev: __show_note_dialog(inst)
-        ))
+        )
+        top_level_add_plus.root = tree
+        tree.add_node(top_level_add_plus)
 
         return root
 

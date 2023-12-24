@@ -1,0 +1,4 @@
+buildozer
+cpython
+cython<3.0.0
+pyinstaller

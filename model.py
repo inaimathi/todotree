@@ -62,7 +62,10 @@ def todo_tree():
         if t['parent_id'] is None:
             res.append(t)
         else:
-            node_map[t['parent_id']]['children'].append(t)
+            try:
+                node_map[t['parent_id']]['children'].append(t)
+            except KeyError:
+                pass
         node_map[t['id']] = t
     return res
 
@@ -72,9 +75,10 @@ def todo_by(id):
     except IndexError:
         pass
 
-def todo_delete(todo_id):
+def todo_shred(todo_id):
     todo = todo_by(id=todo_id)
     assert todo, "No such TODO"
+
     with CONN as cur:
         c = cur.cursor()
         c.execute(*sql.deleteQ("todos", where={"id": todo_id}))
@@ -96,7 +100,7 @@ def todo_update(todo_id, check=None, title=None, body=None, recurrence=None, del
     todo = todo_by(id=todo_id)
     assert todo, "No such TODO"
     update = {}
-    if delete is not None and not delete == todo['delete']:
+    if delete is not None and not delete == todo['deleted']:
         update['deleted'] = delete
     if title is not None and not title == todo['title']:
         update['title'] = title
