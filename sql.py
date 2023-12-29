@@ -22,6 +22,14 @@ def _where_to_string(where):
     else:
         return None
 
+def join_to_string(join):
+    if len(join) == 4:
+        join_type, table, join_from, join_to = join
+        return f"{join_type} JOIN {table} ON {join_from} = {join_to}"
+    elif len(join) == 3:
+        table, join_from, join_to = join
+        return f" LEFT JOIN {table} ON {join_from} = {join_to}"
+
 def where_to_string(where):
     res = _where_to_string(where)
     if res is not None:
@@ -39,9 +47,11 @@ def insertQ(table_name, **args):
         tuple(vs)
     )
 
-def selectQ(table_name, columns, where=None, order_by=None):
+def selectQ(table_name, columns, where=None, join=None, order_by=None):
     query = f"SELECT {', '.join(columns)} FROM {table_name}"
     args = ()
+    if join is not None:
+        query += join_to_string(join)
     if where is not None:
         where_str, where_args = where_to_string(where)
         query += where_str

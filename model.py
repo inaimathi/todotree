@@ -1,7 +1,9 @@
 import os
 import sqlite3
+from collections import defaultdict
 from datetime import datetime
 
+import recurrence as recurr
 import sql
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "todotree.db")
@@ -28,30 +30,54 @@ def _drop():
     with CONN as cur:
         cur.execute("DROP TABLE todos")
 
-def select(table_name, columns, where=None, order_by=None, transform=None):
+def select(table_name, columns, where=None, join=None, order_by=None, transform=None):
     with CONN as cur:
         c = cur.cursor()
         if columns is None or columns == "*":
             columns = [el[1] for el in c.execute(f"PRAGMA table_info({table_name})").fetchall()]
         elif isinstance(columns, str):
             columns = [columns]
-        query, args = sql.selectQ(table_name, columns, where=where, order_by=order_by)
+        query, args = sql.selectQ(table_name, columns, where=where, join=join, order_by=order_by)
         c.execute(query, args)
         res = (dict(zip(columns, vals)) for vals in c.fetchall())
         if transform is not None:
             return [transform(el) for el in res]
         return list(res)
 
+def update(table_name, bindings, where):
+    with CONN as cur:
+        c = cur.cursor()
+        q, args = sql.updateQ(table_name, **{**bindings, "where": where})
+        c.execute(q, args)
+
 
 def _transform_todo(raw):
     for btype in ['checked', 'deleted']:
         raw[btype] = bool(raw[btype])
     for dttype in ['created', 'updated']:
-        raw[dttype] = datetime.fromisoformat(raw[dttype])
+        if type(raw[dttype]) is str:
+            raw[dttype] = datetime.fromisoformat(raw[dttype])
+    if rec := raw['recurrence']:
+        raw['recurrence'] = recurr.from_string(rec)
     return raw
 
+def _recurred_checks():
+    res = defaultdict(list)
+    checks = select(
+        "checks", ["checks.todo_id", "checks.created"],
+        join=("todos", "todo_id", "todos.id"),
+        where=("todos.recurrence", "IS NOT", None)
+    )
+    for el in checks:
+        res[el['checks.todo_id']].append(datetime.fromisoformat(el['checks.created']))
+    return dict(res)
+
+def _checks_of(todo_id):
+    return [datetime.fromisoformat(el['checks.created']) for el in select("checks", "checks.created", where={"todo_id": todo_id})]
+
 def todos():
-    return select("todos", "*", transform=_transform_todo)
+    checks = _recurred_checks()
+    return [{**t, **{"checked_at": checks.get(t['id'])}} for t in select("todos", "*", transform=_transform_todo)]
 
 def todo_tree():
     node_map = {}
@@ -71,7 +97,10 @@ def todo_tree():
 
 def todo_by(id):
     try:
-        return select("todos", "*", where={"id": id}, transform=_transform_todo)[0]
+        t = select("todos", "*", where={"id": id}, transform=_transform_todo)[0]
+        if t['recurrence']:
+            t['checked_at'] = _checks_of(t['id'])
+        return t
     except IndexError:
         pass
 
@@ -83,18 +112,25 @@ def todo_shred(todo_id):
         c = cur.cursor()
         c.execute(*sql.deleteQ("todos", where={"id": todo_id}))
 
-def todo_add(title, body, recurrence=None, parent_id=None):
+def todo_add(title, body=None, recurrence=None, parent_id=None):
     with CONN as cur:
         c = cur.cursor()
         ins = {"title": title, "body": body}
         if recurrence is not None:
-            assert recurrence in {"daily", "weekly", "monthly", "yearly"}
+            assert recurr.validate(recurrence)
             ins["recurrence"] = recurrence
         if parent_id is not None:
             assert todo_by(parent_id)
             ins["parent_id"] = parent_id
         c.execute(*sql.insertQ("todos", **ins))
         return todo_by(c.lastrowid)
+
+def todo_checked_p(todo):
+    if todo['recurrence']:
+        return (todo['checked']
+                and todo['checked_at']
+                and not recurr.should_recur_p(todo['recurrence'], todo['checked_at'][-1]))
+    return todo['checked']
 
 def todo_update(todo_id, check=None, title=None, body=None, recurrence=None, delete=None):
     todo = todo_by(id=todo_id)
@@ -106,7 +142,7 @@ def todo_update(todo_id, check=None, title=None, body=None, recurrence=None, del
         update['title'] = title
     if body is not None and not body == todo['body']:
         update['body'] = body
-    if check is not None and not check == todo['checked']:
+    if check is not None:
         update['checked'] = check
     if not update:
         return None
@@ -128,4 +164,7 @@ def testing_todos():
     todo_add("Add the rest of the TODOs for this project", None, parent_id=tid['id'])
     todo_add("Be able to edit existing TODOs", None, parent_id=1)
     todo_add("Stylin'", None, parent_id=1)
-    todo_add("'Be able to do cool things with dailies", None, parent_id=1)
+    todo_add("Be able to do cool things with dailies", None, parent_id=1)
+    todo_add("Exercise", recurrence="daily")
+    todo_add("Social", recurrence="daily at 11:00")
+    todo_add("Job Search", recurrence="daily")

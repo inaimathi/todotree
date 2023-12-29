@@ -36,9 +36,13 @@ NODE_HELD = False
 
 def m_todo_title(todo):
     title = f"[ref=title]{todo['title']}[/ref]"
-    if todo['checked']:
+    checked = model.todo_checked_p(todo)
+    if checked:
         title = f"[s]{title}[/s]"
-    return f"[font=Inconsolata][ref=check][{'x' if todo['checked'] else ' '}][/ref] [ref=addchild][+][/ref][/font] {title}"
+    if todo['recurrence']:
+        print("SHOWING RECURRING TODO")
+        title = f"[color=#03fcfc]{title}[/color]"
+    return f"[font=Inconsolata][ref=check][{'x' if checked else ' '}][/ref] [ref=addchild][+][/ref][/font] {title}"
 
 def m_todo_plus(todo):
     return "[ref=addchild][font=Inconsolata][+][/font][/ref]"
@@ -46,13 +50,13 @@ def m_todo_plus(todo):
 
 def _link(inst, ref, todo):
     if ref == 'check':
-        if model.todo_update(todo['id'], check=(not todo['checked'])):
-            todo['checked'] = not todo['checked']
+        if updated := model.todo_update(todo['id'], check=(not model.todo_checked_p(todo))):
+            for k, v in updated.items():
+                todo[k] = v
             inst.text=m_todo_title(todo)
         else:
             Logger.info(f"   == Checking a TODO failed :(")
     elif ref == 'addchild':
-        Logger.info(f" -- ADDING CHILD TO {todo}")
         inst.show_note_dialog(inst, None, parent_id=todo['id'])
     else:
         inst.show_note_dialog(inst, todo)
@@ -173,8 +177,45 @@ def Filters(parent):
         box.add_widget(lbl)
         box.add_widget(c)
 
+    parent.add_widget(box)
     return box
 
+class TodoTree:
+    def __init__(self, parent, pos=None, **rest):
+        self.parent = parent
+        self.dialog = EditDialog(parent)
+        self.tree = TreeView(hide_root=True, pos=pos or (0,0))
+        for todo in model.todo_tree():
+            add_subtree(tree, None, todo)
+        self.parent.add_node(tree)
+
+    def show_note_dialog(self, inst, todo=None, parent_id=None):
+        try:
+            if todo is not None:
+                self.dialog.edit(inst, todo, lambda changes: model.todo_update(todo['id'], **changes))
+            elif parent_id is None:
+                self.dialog.edit(inst, None, lambda changes: (
+                    todo := model.todo_add(changes['title'], changes['body'], parent_id=parent_id),
+                    tmp := tree.children[0],
+                    tree.remove_node(tmp),
+                    add_todo_node(inst.root, None, todo),
+                    tree.add_node(tmp)
+                ))
+            else:
+                self.dialog.edit(inst, None, lambda changes: (
+                    todo := model.todo_add(changes['title'], changes['body'], parent_id=parent_id),
+                    add_todo_node(inst.root, inst, todo),
+                ))
+                self.parent.add_widget(dialog.container)
+        except kivy.uix.widget.WidgetException:
+            pass
+
+
+
+## TODO - factor out TreeView into separate class
+##         - give it external methods to re-render on filtering changes
+##         - contain it as much as possible so that we can get scrolling down trivially by
+##           wrapping it in a ScrollView later
 
 class TodoTreeApp(App):
     def on_start(self):
@@ -185,10 +226,9 @@ class TodoTreeApp(App):
 
     def build(self):
         root = FloatLayout()
+        dialog = EditDialog(root)
         tree = TreeView(hide_root=True, pos=(0,0))
         # filters = Filters(root)
-        # root.add_widget(filters)
-        dialog = EditDialog(root)
 
         def __show_note_dialog(inst, todo=None, parent_id=None):
             try:
