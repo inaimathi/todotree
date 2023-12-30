@@ -240,39 +240,48 @@ def Filters(parent):
     parent.add_widget(box)
     return box
 
-# class TodoTree:
-#     def __init__(self, parent, pos=None, **rest):
-#         self.parent = parent
-#         self.dialog = EditDialog(parent)
-#         self.tree = TreeView(
-#             hide_root=True, pos=pos or (0,0),
-#             on_node_expand=lambda inst: Logger.info(f"EXPANDING {inst}"),
-#             on_node_collapse=lambda inst: Logger.info(f"EXPANDING {inst}")
-#         )
-#         for todo in model.todo_tree():
-#             add_subtree(tree, None, todo)
-#         self.parent.add_node(tree)
+class TodoTree:
+    def __init__(self, parent, pos=None, **rest):
+        self.parent = parent
+        self.dialog = EditDialog(parent)
+        self.tree = TreeView(
+            hide_root=True, pos=pos or (0,0),
+            on_node_expand=lambda inst, node: Logger.info(f"EXPANDING {node.todo_id} -- {node}"),
+            on_node_collapse=lambda inst, node: Logger.info(f"COLLAPSING {node.todo_id} -- {node}")
+        )
+        self.tree.show_note_dialog = self.show_note_dialog
+        for todo in model.todo_tree():
+            add_subtree(self.tree, None, todo)
 
-#     def show_note_dialog(self, inst, todo=None, parent_id=None):
-#         try:
-#             if todo is not None:
-#                 self.dialog.edit(inst, todo, lambda changes: model.todo_update(todo['id'], **changes))
-#             elif parent_id is None:
-#                 self.dialog.edit(inst, None, lambda changes: (
-#                     todo := model.todo_add(changes['title'], body=changes.get('body'), recurrence=changes.get('recurrence'), parent_id=parent_id),
-#                     tmp := tree.children[0],
-#                     tree.remove_node(tmp),
-#                     add_todo_node(inst.root, None, todo),
-#                     tree.add_node(tmp)
-#                 ))
-#             else:
-#                 self.dialog.edit(inst, None, lambda changes: (
-#                     todo := model.todo_add(changes['title'], body=changes.get('body'), recurrence=changes.get('recurrence'), parent_id=parent_id),
-#                     add_todo_node(inst.root, inst, todo),
-#                 ))
-#                 self.parent.add_widget(dialog.container)
-#         except kivy.uix.widget.WidgetException:
-#             pass
+        top_level_plus = TreeViewLabel(
+            text="[font=Inconsolata][ref=addchild][+][/ref][/font]", markup=True,
+            on_ref_press=lambda inst, ev: __show_note_dialog(inst)
+        )
+        top_level_plus.root = self.tree
+        self.tree.add_node(top_level_plus)
+        self.parent.add_widget(self.tree)
+
+
+    def show_note_dialog(self, inst, todo=None, parent_id=None):
+        try:
+            if todo is not None:
+                self.dialog.edit(inst, todo, lambda changes: model.todo_update(todo['id'], **changes))
+            elif parent_id is None:
+                self.dialog.edit(inst, None, lambda changes: (
+                    todo := model.todo_add(changes['title'], body=changes.get('body'), recurrence=changes.get('recurrence'), parent_id=parent_id),
+                    tmp := tree.children[0],
+                    tree.remove_node(tmp),
+                    add_todo_node(inst.root, None, todo),
+                    tree.add_node(tmp)
+                ))
+            else:
+                self.dialog.edit(inst, None, lambda changes: (
+                    todo := model.todo_add(changes['title'], body=changes.get('body'), recurrence=changes.get('recurrence'), parent_id=parent_id),
+                    add_todo_node(inst.root, inst, todo),
+                ))
+                self.parent.add_widget(dialog.container)
+        except kivy.uix.widget.WidgetException:
+            pass
 
 
 
@@ -291,46 +300,7 @@ class TodoTreeApp(App):
     def build(self):
         root = FloatLayout()
         dialog = EditDialog(root)
-        tree = TreeView(
-            hide_root=True, pos=(0,0),
-            on_node_expand=lambda inst, node: Logger.info(f"EXPANDING {node.todo_id} -- {node}"),
-            on_node_collapse=lambda inst, node: Logger.info(f"COLLAPSING {node.todo_id} -- {node}")
-        )
-        # filters = Filters(root)
-
-        def __show_note_dialog(inst, todo=None, parent_id=None):
-            try:
-                if todo is not None:
-                    dialog.edit(inst, todo, lambda changes: model.todo_update(todo['id'], **changes))
-                elif parent_id is None:
-                    dialog.edit(inst, None, lambda changes: (
-                        todo := model.todo_add(changes['title'], body=changes.get('body'), recurrence=changes.get('recurrence'), parent_id=parent_id),
-                        tmp := tree.children[0],
-                        tree.remove_node(tmp),
-                        add_todo_node(inst.root, None, todo),
-                        tree.add_node(tmp)
-                    ))
-                else:
-                    dialog.edit(inst, None, lambda changes: (
-                        todo := model.todo_add(changes['title'], body=changes.get('body'), recurrence=changes.get('recurrence'), parent_id=parent_id),
-                        add_todo_node(inst.root, inst, todo),
-                    ))
-                root.add_widget(dialog.container)
-            except kivy.uix.widget.WidgetException:
-                pass
-
-        tree.show_note_dialog = __show_note_dialog
-        root.add_widget(tree)
-
-        for todo in model.todo_tree():
-            add_subtree(tree, None, todo)
-
-        top_level_add_plus = TreeViewLabel(
-            text="[font=Inconsolata][ref=addchild][+][/ref][/font]", markup=True,
-            on_ref_press=lambda inst, ev: __show_note_dialog(inst)
-        )
-        top_level_add_plus.root = tree
-        tree.add_node(top_level_add_plus)
+        tree = TodoTree(root)
 
         return root
 
