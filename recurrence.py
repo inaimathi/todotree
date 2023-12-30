@@ -2,6 +2,9 @@ import datetime
 import re
 
 
+def delta_hours(delta):
+    return (delta.total_seconds() / 60) / 60
+
 def from_string(string):
     string = string.strip().lower()
     if string.startswith("daily"):
@@ -38,7 +41,11 @@ def should_recur_p(rec, last_checked, now=None):
     elif rec['recurs'] == "annually":
         days = 365
 
-    if at := rec.get('at'):
-        return delta.days > days or (delta.days == days and now.hour >= rec['at'].hour)
+    hours = (days * 24) - int(days * 0.1)
 
-    return delta.days >= days
+    day_check = (delta.days >= days) or (delta_hours(delta) >= hours)
+
+    if at := rec.get('at'):
+        return day_check or (delta.days == days and now.hour >= rec['at'].hour)
+
+    return day_check

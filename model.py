@@ -126,10 +126,9 @@ def todo_add(title, body=None, recurrence=None, parent_id=None):
         return todo_by(c.lastrowid)
 
 def todo_checked_p(todo):
-    if todo['recurrence']:
-        return (todo['checked']
-                and todo['checked_at']
-                and not recurr.should_recur_p(todo['recurrence'], todo['checked_at'][-1]))
+    if todo['recurrence'] and todo['checked_at']:
+        should_recur = recurr.should_recur_p(todo['recurrence'], todo['checked_at'][-1])
+        return todo['checked'] and todo['checked_at'] and not should_recur
     return todo['checked']
 
 def todo_update(todo_id, check=None, title=None, body=None, recurrence=None, delete=None):
@@ -144,6 +143,9 @@ def todo_update(todo_id, check=None, title=None, body=None, recurrence=None, del
         update['body'] = body
     if check is not None:
         update['checked'] = check
+    if recurrence is not None:
+        assert recurr.validate(recurrence), "Invalid recurrence"
+        update['recurrence'] = recurrence
     if not update:
         return None
     with CONN as cur:

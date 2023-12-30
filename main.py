@@ -27,6 +27,8 @@ LabelBase.register(
 
 __version__ = "0.0.0"
 
+# OPEN = {1, 9, 10}
+
 def initialize():
     Logger.info(f" == v{__version__}")
     Logger.info(" === initializing model...")
@@ -40,7 +42,6 @@ def m_todo_title(todo):
     if checked:
         title = f"[s]{title}[/s]"
     if todo['recurrence']:
-        print("SHOWING RECURRING TODO")
         title = f"[color=#03fcfc]{title}[/color]"
     return f"[font=Inconsolata][ref=check][{'x' if checked else ' '}][/ref] [ref=addchild][+][/ref][/font] {title}"
 
@@ -80,6 +81,7 @@ def add_todo_node(root, parent, todo):
     ), parent)
     node.show_note_dialog = root.show_note_dialog
     node.root = root
+    node.todo_id = todo['id']
     add_todo_body(node, todo)
     return node
 
@@ -87,12 +89,12 @@ def add_subtree(root, parent, todo):
     if todo['deleted']:
         return None
     node = add_todo_node(root, parent, todo)
+    # if todo['id'] in OPEN:
+    #     node.is_open = True
     if todo['children']:
         for child in todo['children']:
             add_subtree(root, node, child)
     return node
-
-
 
 class EditDialog:
     def __init__(self, root):
@@ -100,6 +102,23 @@ class EditDialog:
         self.container = BoxLayout(orientation="vertical", size_hint=(1, 0.3), pos=(0,Window.height / 2))
         self.title_input = TextInput(text="")
         self.body_input = TextInput(text="", multiline=True)
+        rec_box = BoxLayout(orientation="horizontal")
+        self.one_time = CheckBox(group="todo_recurrence", active=True)
+        self.daily = CheckBox(group="todo_recurrence")
+        self.weekly = CheckBox(group="todo_recurrence")
+        self.monthly = CheckBox(group="todo_recurrence")
+        self.annually = CheckBox(group="todo_recurrence")
+        rec_box.add_widget(Label(text='One Time', halign='left'))
+        rec_box.add_widget(self.one_time)
+        rec_box.add_widget(Label(text='Daily'))
+        rec_box.add_widget(self.daily)
+        rec_box.add_widget(Label(text='Weekly'))
+        rec_box.add_widget(self.weekly)
+        rec_box.add_widget(Label(text='Monthly'))
+        rec_box.add_widget(self.monthly)
+        rec_box.add_widget(Label(text='Monthly'))
+        rec_box.add_widget(self.annually)
+
         btn_box = BoxLayout(orientation="horizontal")
         self.cancel = Button(text="Cancel")
         self.cancel.bind(on_press=lambda inst: self.on_cancel())
@@ -109,6 +128,7 @@ class EditDialog:
         self.delete.bind(on_press=lambda inst: self.on_delete())
         self.container.add_widget(self.title_input)
         self.container.add_widget(self.body_input)
+        self.container.add_widget(rec_box)
         self.container.add_widget(btn_box)
         self.current_todo = None
         self.target_inst = None
@@ -121,17 +141,42 @@ class EditDialog:
         self.target_inst.root.remove_node(self.target_inst)
         self.root.remove_widget(self.container)
 
+    def reset(self):
+        self.title_input.text = ""
+        self.body_input.text = ""
+        self.delete.disabled = False
+        self.on_save = None
+        self.current_todo = None
 
     def on_cancel(self):
+        self.reset()
         self.root.remove_widget(self.container)
 
+    def get_recurrence(self):
+        if self.daily.active:
+            return 'daily'
+        elif self.weekly.active:
+            return 'weekly'
+        elif self.monthly.active:
+            return 'monthly'
+        elif self.annually.active:
+            return 'annually'
+
     def on_ok(self):
+        Logger.info(f"OK CLICKED")
         self.root.remove_widget(self.container)
-        if self.on_save({
+        Logger.info(f"  RECURRENCE: {self.get_recurrence()}")
+        change = {
             "title": self.title_input.text,
-            "body": self.body_input.text
-        }):
+            "body": self.body_input.text,
+            "recurrence": self.get_recurrence()
+        }
+        Logger.info(f"  CHANGE: {change}")
+        save_res = self.on_save(change)
+        Logger.info(f"  SAVE RES: {save_res}")
+        if save_res:
             if self.current_todo is None:
+                self.reset()
                 self.root.remove_widget(self.container)
                 return
             self.current_todo['title'] = self.title_input.text
@@ -150,8 +195,7 @@ class EditDialog:
                 if self.current_todo['body']:
                     Logger.info("  FRESHLY FILLED BODY, ADDING NODE")
                     add_todo_body(self.target_inst, self.current_todo)
-            self.on_save = None
-            self.current_todo = None
+            self.reset()
         self.root.remove_widget(self.container)
 
     def edit(self, inst, todo, on_save_cb):
@@ -160,12 +204,28 @@ class EditDialog:
             self.title_input.text = ""
             self.body_input.text = ""
             self.delete.disabled = True
+            self.one_time.active = True
             return
         self.delete.disabled = False
         self.current_todo = todo
         self.target_inst = inst
         self.title_input.text = todo['title']
         self.body_input.text = todo['body'] or ""
+        if todo['recurrence']:
+            recr = todo['recurrence']['recurs']
+            if recr == 'daily':
+                self.daily.active = True
+            elif recr == 'weekly':
+                self.weekly.active = True
+            elif recr == 'monthly':
+                self.monthly.active = True
+            elif recr == 'annually':
+                self.annually.active = True
+            else:
+                self.one_time.active = True
+        else:
+            self.one_time.active = True
+
 
 
 def Filters(parent):
@@ -180,35 +240,39 @@ def Filters(parent):
     parent.add_widget(box)
     return box
 
-class TodoTree:
-    def __init__(self, parent, pos=None, **rest):
-        self.parent = parent
-        self.dialog = EditDialog(parent)
-        self.tree = TreeView(hide_root=True, pos=pos or (0,0))
-        for todo in model.todo_tree():
-            add_subtree(tree, None, todo)
-        self.parent.add_node(tree)
+# class TodoTree:
+#     def __init__(self, parent, pos=None, **rest):
+#         self.parent = parent
+#         self.dialog = EditDialog(parent)
+#         self.tree = TreeView(
+#             hide_root=True, pos=pos or (0,0),
+#             on_node_expand=lambda inst: Logger.info(f"EXPANDING {inst}"),
+#             on_node_collapse=lambda inst: Logger.info(f"EXPANDING {inst}")
+#         )
+#         for todo in model.todo_tree():
+#             add_subtree(tree, None, todo)
+#         self.parent.add_node(tree)
 
-    def show_note_dialog(self, inst, todo=None, parent_id=None):
-        try:
-            if todo is not None:
-                self.dialog.edit(inst, todo, lambda changes: model.todo_update(todo['id'], **changes))
-            elif parent_id is None:
-                self.dialog.edit(inst, None, lambda changes: (
-                    todo := model.todo_add(changes['title'], changes['body'], parent_id=parent_id),
-                    tmp := tree.children[0],
-                    tree.remove_node(tmp),
-                    add_todo_node(inst.root, None, todo),
-                    tree.add_node(tmp)
-                ))
-            else:
-                self.dialog.edit(inst, None, lambda changes: (
-                    todo := model.todo_add(changes['title'], changes['body'], parent_id=parent_id),
-                    add_todo_node(inst.root, inst, todo),
-                ))
-                self.parent.add_widget(dialog.container)
-        except kivy.uix.widget.WidgetException:
-            pass
+#     def show_note_dialog(self, inst, todo=None, parent_id=None):
+#         try:
+#             if todo is not None:
+#                 self.dialog.edit(inst, todo, lambda changes: model.todo_update(todo['id'], **changes))
+#             elif parent_id is None:
+#                 self.dialog.edit(inst, None, lambda changes: (
+#                     todo := model.todo_add(changes['title'], body=changes.get('body'), recurrence=changes.get('recurrence'), parent_id=parent_id),
+#                     tmp := tree.children[0],
+#                     tree.remove_node(tmp),
+#                     add_todo_node(inst.root, None, todo),
+#                     tree.add_node(tmp)
+#                 ))
+#             else:
+#                 self.dialog.edit(inst, None, lambda changes: (
+#                     todo := model.todo_add(changes['title'], body=changes.get('body'), recurrence=changes.get('recurrence'), parent_id=parent_id),
+#                     add_todo_node(inst.root, inst, todo),
+#                 ))
+#                 self.parent.add_widget(dialog.container)
+#         except kivy.uix.widget.WidgetException:
+#             pass
 
 
 
@@ -227,7 +291,11 @@ class TodoTreeApp(App):
     def build(self):
         root = FloatLayout()
         dialog = EditDialog(root)
-        tree = TreeView(hide_root=True, pos=(0,0))
+        tree = TreeView(
+            hide_root=True, pos=(0,0),
+            on_node_expand=lambda inst, node: Logger.info(f"EXPANDING {node.todo_id} -- {node}"),
+            on_node_collapse=lambda inst, node: Logger.info(f"COLLAPSING {node.todo_id} -- {node}")
+        )
         # filters = Filters(root)
 
         def __show_note_dialog(inst, todo=None, parent_id=None):
@@ -236,7 +304,7 @@ class TodoTreeApp(App):
                     dialog.edit(inst, todo, lambda changes: model.todo_update(todo['id'], **changes))
                 elif parent_id is None:
                     dialog.edit(inst, None, lambda changes: (
-                        todo := model.todo_add(changes['title'], changes['body'], parent_id=parent_id),
+                        todo := model.todo_add(changes['title'], body=changes.get('body'), recurrence=changes.get('recurrence'), parent_id=parent_id),
                         tmp := tree.children[0],
                         tree.remove_node(tmp),
                         add_todo_node(inst.root, None, todo),
@@ -244,7 +312,7 @@ class TodoTreeApp(App):
                     ))
                 else:
                     dialog.edit(inst, None, lambda changes: (
-                        todo := model.todo_add(changes['title'], changes['body'], parent_id=parent_id),
+                        todo := model.todo_add(changes['title'], body=changes.get('body'), recurrence=changes.get('recurrence'), parent_id=parent_id),
                         add_todo_node(inst.root, inst, todo),
                     ))
                 root.add_widget(dialog.container)
