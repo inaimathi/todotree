@@ -14,6 +14,7 @@ from kivy.uix.button import Button
 from kivy.uix.checkbox import CheckBox
 from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.label import Label
+from kivy.uix.scrollview import ScrollView
 from kivy.uix.textinput import TextInput
 from kivy.uix.treeview import TreeView, TreeViewLabel, TreeViewNode
 
@@ -260,10 +261,12 @@ class TodoTree:
         self.render(model.todo_tree())
 
     def render(self, todos):
+        self.scroll = ScrollView(do_scroll_x=False, do_scroll_y=True) # size=(Window.width, Window.height)
         self.tree = TreeView(
-            hide_root=True, pos=self.pos,
-            on_node_expand=lambda inst, node: Logger.info(f"EXPANDING {node.todo_id} -- {node}"),
-            on_node_collapse=lambda inst, node: Logger.info(f"COLLAPSING {node.todo_id} -- {node}")
+            hide_root=True, pos=self.pos, # size_hint=(0.9, 1),
+            size_hint_y=None, height=self.scroll.height,
+            on_node_expand=lambda inst, node: Logger.info(f"EXPANDING {getattr(node, 'todo_id', None)} -- {node}"),
+            on_node_collapse=lambda inst, node: Logger.info(f"COLLAPSING {getattr(node, 'todo_id', None)} -- {node}")
         )
         self.tree.show_note_dialog = self.show_note_dialog
         for todo in todos:
@@ -271,11 +274,12 @@ class TodoTree:
 
         top_level_plus = TreeViewLabel(
             text="[font=Inconsolata][ref=addchild][+][/ref][/font]", markup=True,
-            on_ref_press=lambda inst, ev: __show_note_dialog(inst)
+            on_ref_press=lambda inst, ev: self.show_note_dialog(inst)
         )
         top_level_plus.root = self.tree
         self.tree.add_node(top_level_plus)
-        self.parent.add_widget(self.tree)
+        self.scroll.add_widget(self.tree)
+        self.parent.add_widget(self.scroll)
 
     def remove(self):
         self.parent.remove_widget(self.tree)
@@ -288,10 +292,10 @@ class TodoTree:
             elif parent_id is None:
                 self.dialog.edit(inst, None, lambda changes: (
                     todo := model.todo_add(changes['title'], body=changes.get('body'), recurrence=changes.get('recurrence'), parent_id=parent_id),
-                    tmp := tree.children[0],
-                    tree.remove_node(tmp),
+                    tmp := self.tree.children[0],
+                    self.tree.remove_node(tmp),
                     add_todo_node(inst.root, None, todo),
-                    tree.add_node(tmp)
+                    self.tree.add_node(tmp)
                 ))
             else:
                 self.dialog.edit(inst, None, lambda changes: (
