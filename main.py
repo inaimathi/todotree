@@ -6,6 +6,8 @@ from kivy.app import App
 from kivy.clock import Clock
 from kivy.core.text import LabelBase
 from kivy.core.window import Window
+from kivy.graphics.context_instructions import Color
+from kivy.graphics.vertex_instructions import Rectangle
 from kivy.logger import Logger
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
@@ -27,7 +29,7 @@ LabelBase.register(
 
 __version__ = "0.0.0"
 
-# OPEN = {1, 9, 10}
+OPEN = {1, 9, 10}
 
 def initialize():
     Logger.info(f" == v{__version__}")
@@ -50,6 +52,7 @@ def m_todo_plus(todo):
 
 
 def _link(inst, ref, todo):
+    Logger.info(f"LINK -- {ref}")
     if ref == 'check':
         if updated := model.todo_update(todo['id'], check=(not model.todo_checked_p(todo))):
             for k, v in updated.items():
@@ -59,6 +62,9 @@ def _link(inst, ref, todo):
             Logger.info(f"   == Checking a TODO failed :(")
     elif ref == 'addchild':
         inst.show_note_dialog(inst, None, parent_id=todo['id'])
+    elif ref == 'title':
+        Logger.info(f"  YUP IT'S title")
+        inst.show_note_dialog(inst, todo)
     else:
         inst.show_note_dialog(inst, todo)
 
@@ -89,8 +95,8 @@ def add_subtree(root, parent, todo):
     if todo['deleted']:
         return None
     node = add_todo_node(root, parent, todo)
-    # if todo['id'] in OPEN:
-    #     node.is_open = True
+    if todo['id'] in OPEN:
+        root.toggle_node(node)
     if todo['children']:
         for child in todo['children']:
             add_subtree(root, node, child)
@@ -100,6 +106,12 @@ class EditDialog:
     def __init__(self, root):
         self.root = root
         self.container = BoxLayout(orientation="vertical", size_hint=(1, 0.3), pos=(0,Window.height / 2))
+        # with self.container.canvas.before:
+        #     Color(.20, .06, .31, 1)
+        #     Rectangle(
+        #         size=(Window.width, Window.height),
+        #         pos=self.container.pos
+        #     )
         self.title_input = TextInput(text="")
         self.body_input = TextInput(text="", multiline=True)
         rec_box = BoxLayout(orientation="horizontal")
@@ -116,7 +128,7 @@ class EditDialog:
         rec_box.add_widget(self.weekly)
         rec_box.add_widget(Label(text='Monthly'))
         rec_box.add_widget(self.monthly)
-        rec_box.add_widget(Label(text='Monthly'))
+        rec_box.add_widget(Label(text='Annually'))
         rec_box.add_widget(self.annually)
 
         btn_box = BoxLayout(orientation="horizontal")
@@ -243,14 +255,18 @@ def Filters(parent):
 class TodoTree:
     def __init__(self, parent, pos=None, **rest):
         self.parent = parent
+        self.pos = pos or (0,0)
         self.dialog = EditDialog(parent)
+        self.render(model.todo_tree())
+
+    def render(self, todos):
         self.tree = TreeView(
-            hide_root=True, pos=pos or (0,0),
+            hide_root=True, pos=self.pos,
             on_node_expand=lambda inst, node: Logger.info(f"EXPANDING {node.todo_id} -- {node}"),
             on_node_collapse=lambda inst, node: Logger.info(f"COLLAPSING {node.todo_id} -- {node}")
         )
         self.tree.show_note_dialog = self.show_note_dialog
-        for todo in model.todo_tree():
+        for todo in todos:
             add_subtree(self.tree, None, todo)
 
         top_level_plus = TreeViewLabel(
@@ -261,8 +277,11 @@ class TodoTree:
         self.tree.add_node(top_level_plus)
         self.parent.add_widget(self.tree)
 
+    def remove(self):
+        self.parent.remove_widget(self.tree)
 
     def show_note_dialog(self, inst, todo=None, parent_id=None):
+        Logger.info(f"  -- CALLED self.show_note_dialog {inst} {todo} {parent_id}")
         try:
             if todo is not None:
                 self.dialog.edit(inst, todo, lambda changes: model.todo_update(todo['id'], **changes))
@@ -279,8 +298,9 @@ class TodoTree:
                     todo := model.todo_add(changes['title'], body=changes.get('body'), recurrence=changes.get('recurrence'), parent_id=parent_id),
                     add_todo_node(inst.root, inst, todo),
                 ))
-                self.parent.add_widget(dialog.container)
+            self.parent.add_widget(self.dialog.container)
         except kivy.uix.widget.WidgetException:
+            Logger.info("  -- EXPLOSION")
             pass
 
 
@@ -299,7 +319,6 @@ class TodoTreeApp(App):
 
     def build(self):
         root = FloatLayout()
-        dialog = EditDialog(root)
         tree = TodoTree(root)
 
         return root
