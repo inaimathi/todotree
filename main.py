@@ -72,7 +72,7 @@ def _link(inst, ref, todo):
 def body_text(todo):
     res = []
     if todo['recurrence']:
-        res.append(f"Total : {len(todo['checked_at'])}")
+        res.append(f"Total : {len(todo['checked_at'] or [])}")
         res.append(f"Streak: [font=Inconsolata]{''.join(['[x]'] * model.todo_streak(todo))}[ ][/font]")
     if todo['body']:
         res.append(f"[ref=edit][i]{todo['body']}[/i][/ref]")
@@ -101,15 +101,15 @@ def add_todo_node(root, parent, todo):
     add_todo_body(node, todo)
     return node
 
-def add_subtree(root, parent, todo):
-    if todo['deleted']:
+def add_subtree(root, parent, todo, filter):
+    if filter is not None and not filter(todo):
         return None
     node = add_todo_node(root, parent, todo)
     if todo['id'] in OPEN:
         root.toggle_node(node)
     if todo['children']:
         for child in todo['children']:
-            add_subtree(root, node, child)
+            add_subtree(root, node, child, filter)
     return node
 
 class EditDialog:
@@ -248,20 +248,6 @@ class EditDialog:
         else:
             self.one_time.active = True
 
-
-
-def Filters(parent):
-    box = BoxLayout(orientation="horizontal", pos=(0,0), size_hint=(1, 0.1))
-    labels = [Label(text="Unchecked"), Label(text="Checked"), Label(text="Deleted")]
-    checks = [CheckBox(active=True), CheckBox(active=True), CheckBox()]
-
-    for lbl, c in zip(labels, checks):
-        box.add_widget(lbl)
-        box.add_widget(c)
-
-    parent.add_widget(box)
-    return box
-
 class TodoTree:
     def __init__(self, parent, pos=None, **rest):
         self.parent = parent
@@ -269,17 +255,22 @@ class TodoTree:
         self.dialog = EditDialog(parent)
         self.render(model.todo_tree())
 
-    def render(self, todos):
+    def re_render(self, todos, filter=None):
+        self.remove()
+        self.render(todos, filter)
+
+    def render(self, todos, filter=None):
         self.scroll = ScrollView(do_scroll_x=False, do_scroll_y=True) # size=(Window.width, Window.height)
         self.tree = TreeView(
             hide_root=True, pos=self.pos, # size_hint=(0.9, 1),
-            size_hint_y=None, height=self.scroll.height,
+            size_hint_y=None, height=self.scroll.height / 2,
             on_node_expand=lambda inst, node: Logger.info(f"EXPANDING {getattr(node, 'todo_id', None)} -- {node}"),
             on_node_collapse=lambda inst, node: Logger.info(f"COLLAPSING {getattr(node, 'todo_id', None)} -- {node}")
         )
         self.tree.show_note_dialog = self.show_note_dialog
         for todo in todos:
-            add_subtree(self.tree, None, todo)
+            if filter is None or filter(todo):
+                add_subtree(self.tree, None, todo, filter)
 
         top_level_plus = TreeViewLabel(
             text="[font=Inconsolata][ref=addchild][+][/ref][/font]", markup=True,
@@ -291,7 +282,7 @@ class TodoTree:
         self.parent.add_widget(self.scroll)
 
     def remove(self):
-        self.parent.remove_widget(self.tree)
+        self.parent.remove_widget(self.scroll)
 
     def show_note_dialog(self, inst, todo=None, parent_id=None):
         Logger.info(f"  -- CALLED self.show_note_dialog {inst} {todo} {parent_id}")
@@ -317,6 +308,35 @@ class TodoTree:
             pass
 
 
+def Filters(parent, tree):
+    box = BoxLayout(orientation="horizontal", pos=(0,0), size_hint=(1, 0.1))
+    tags = ["Unchecked", "Checked", "Deleted"]
+    checks = [
+        CheckBox(active=True),
+        CheckBox(active=True),
+        CheckBox()
+    ]
+
+    def _update_tree():
+        unchecked, checked, deleted = [c.active for c in checks]
+        Logger.info(f"FILTER CLICKED = {(unchecked, checked, deleted)}")
+        tree.re_render(
+            model.todo_tree(),
+            lambda t: (
+                (unchecked and not model.todo_checked_p(t))
+                or (checked and model.todo_checked_p(t))
+                or (deleted and t['deleted'])
+            ))
+        parent.remove_widget(box)
+        parent.add_widget(box)
+
+    for lbl, c in zip(tags, checks):
+        c.bind(active=lambda inst, val: _update_tree())
+        box.add_widget(Label(text=lbl))
+        box.add_widget(c)
+
+    parent.add_widget(box)
+    return box
 
 ## TODO - factor out TreeView into separate class
 ##         - give it external methods to re-render on filtering changes
@@ -333,6 +353,7 @@ class TodoTreeApp(App):
     def build(self):
         root = FloatLayout()
         tree = TodoTree(root)
+        filters = Filters(root, tree)
 
         return root
 
