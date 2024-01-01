@@ -253,7 +253,7 @@ class TodoTree:
         self.parent = parent
         self.pos = pos or (0,0)
         self.dialog = EditDialog(parent)
-        self.render(model.todo_tree())
+        self.render(model.todo_tree(), lambda t: not t['deleted'])
 
     def re_render(self, todos, filter=None):
         self.remove()
@@ -319,14 +319,17 @@ def Filters(parent, tree):
 
     def _update_tree():
         unchecked, checked, deleted = [c.active for c in checks]
+        def _filter_todo(todo):
+            if deleted and todo['deleted']:
+                return True
+            elif not todo['deleted']:
+                return (
+                    (unchecked and not model.todo_checked_p(todo))
+                    or (checked and model.todo_checked_p(todo))
+                )
+
         Logger.info(f"FILTER CLICKED = {(unchecked, checked, deleted)}")
-        tree.re_render(
-            model.todo_tree(),
-            lambda t: (
-                (unchecked and not model.todo_checked_p(t))
-                or (checked and model.todo_checked_p(t))
-                or (deleted and t['deleted'])
-            ))
+        tree.re_render(model.todo_tree(), _filter_todo)
         parent.remove_widget(box)
         parent.add_widget(box)
 
