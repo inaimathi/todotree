@@ -26,10 +26,25 @@ def init():
             "created DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL",
             "FOREIGN KEY(todo_id) REFERENCES todos(id)"
         ]))
+        cur.execute(sql.createQ("ui_expand", [
+            "todo_id INTEGER",
+            "FOREIGN KEY(todo_id) REFERENCES todos(id) ON DELETE CASCADE"
+        ]))
+        cur.execute(sql.createQ("ui_filters", [
+            "id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL",
+            "name TEXT", "checked INTEGER"
+        ]))
+        cur.execute(*sql.insertQ("ui_filters", name="Unchecked", checked=True))
+        cur.execute(*sql.insertQ("ui_filters", name="Checked", checked=True))
+        cur.execute(*sql.insertQ("ui_filters", name="Deleted"))
 
 def _drop():
     with CONN as cur:
         cur.execute("DROP TABLE todos")
+        cur.execute("DROP TABLE checks")
+        cur.execute("DROP TABLE ui_expand")
+        cur.execute("DROP TABLE ui_filters")
+
 
 def select(table_name, columns, where=None, join=None, order_by=None, transform=None):
     with CONN as cur:
@@ -156,7 +171,9 @@ def todo_update(todo_id, check=None, title=None, body=None, recurrence=None, del
         update['body'] = body
     if check is not None:
         update['checked'] = check
-    if recurrence is not None:
+    if recurrence == "once" and todo['recurrence'] is not None:
+        update['recurrence'] = None
+    elif recurrence is not None:
         assert recurr.validate(recurrence), "Invalid recurrence"
         update['recurrence'] = recurrence
     if not update:
@@ -168,6 +185,30 @@ def todo_update(todo_id, check=None, title=None, body=None, recurrence=None, del
         if 'checked' in update:
             c.execute(*sql.insertQ('checks', todo_id=todo_id, checked=check))
     return todo_by(id=todo_id)
+
+
+## UI state
+def todo_collapse(todo_id):
+    with CONN as cur:
+        c = cur.cursor()
+        c.execute(*sql.deleteQ("ui_expand", where={"todo_id": todo_id}))
+
+def todo_expand(todo_id):
+    with CONN as cur:
+        c = cur.cursor()
+        c.execute(*sql.insertQ("ui_expand", todo_id=todo_id))
+
+def expanded_todos():
+    return {el['todo_id'] for el in select("expand", "todo_id")}
+
+def ui_filter_update(filter_name, state):
+    with CONN as cur:
+        c = cur.cursor()
+        c.execute(*sql.updateQ("ui_filters", checked=state, where={"name": filter_name}))
+
+def ui_filters():
+    return {el['name']: bool(el['checked']) for el in  select("ui_filters", "*")}
+
 
 def testing_todos():
     todo_add("Finish first cut of TodoTree", "This means having a 'good enough' app running no your phone that you can use to plan other stuff in your life. It doesn't mean 'never do any more work on it'.")

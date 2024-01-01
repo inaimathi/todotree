@@ -30,7 +30,7 @@ LabelBase.register(
 
 __version__ = "0.0.0"
 
-OPEN = {1, 9, 10}
+OPEN = model.expanded_todos()
 
 def initialize():
     Logger.info(f" == v{__version__}")
@@ -38,6 +38,11 @@ def initialize():
     model.init()
 
 NODE_HELD = False
+_REC_COLORS = {
+    "daily": "#03fcfc",
+    "weekly": "#f0de16",
+    "monthly": "#f51df1"
+}
 
 def m_todo_title(todo):
     title = f"[ref=title]{todo['title']}[/ref]"
@@ -45,7 +50,8 @@ def m_todo_title(todo):
     if checked:
         title = f"[s]{title}[/s]"
     if todo['recurrence']:
-        title = f"[color=#03fcfc]{title}[/color]"
+        rc = todo['recurrence']['recurs']
+        title = f"[color={_REC_COLORS[rc]}]{title}[/color]"
     return f"[font=Inconsolata][ref=check][{'x' if checked else ' '}][/ref] [ref=addchild][+][/ref][/font] {title}"
 
 def m_todo_plus(todo):
@@ -112,16 +118,23 @@ def add_subtree(root, parent, todo, filter):
             add_subtree(root, node, child, filter)
     return node
 
+def _vbox(*elems):
+    box = BoxLayout(orientation="vertical")
+    for el in elems:
+        box.add_widget(el)
+    return box
+
 class EditDialog:
     def __init__(self, root):
         self.root = root
         self.container = BoxLayout(orientation="vertical", size_hint=(1, 0.3), pos=(0,Window.height / 2))
-        # with self.container.canvas.before:
-        #     Color(.20, .06, .31, 1)
-        #     Rectangle(
-        #         size=(Window.width, Window.height),
-        #         pos=self.container.pos
-        #     )
+        with self.container.canvas.before:
+            Color(0, 0, 0, 0.9)
+            x, y = self.container.pos
+            Rectangle(
+                size=(Window.width * 2, self.container.height * 2),
+                pos=(x-10, y-10)
+            )
         self.title_input = TextInput(text="")
         self.body_input = TextInput(text="", multiline=True)
         rec_box = BoxLayout(orientation="horizontal")
@@ -129,17 +142,10 @@ class EditDialog:
         self.daily = CheckBox(group="todo_recurrence")
         self.weekly = CheckBox(group="todo_recurrence")
         self.monthly = CheckBox(group="todo_recurrence")
-        self.annually = CheckBox(group="todo_recurrence")
-        rec_box.add_widget(Label(text='One Time', halign='left'))
-        rec_box.add_widget(self.one_time)
-        rec_box.add_widget(Label(text='Daily'))
-        rec_box.add_widget(self.daily)
-        rec_box.add_widget(Label(text='Weekly'))
-        rec_box.add_widget(self.weekly)
-        rec_box.add_widget(Label(text='Monthly'))
-        rec_box.add_widget(self.monthly)
-        rec_box.add_widget(Label(text='Annually'))
-        rec_box.add_widget(self.annually)
+        rec_box.add_widget(_vbox(self.one_time, Label(text="One Time")))
+        rec_box.add_widget(_vbox(self.daily, Label(text="Daily")))
+        rec_box.add_widget(_vbox(self.weekly, Label(text="Weekly")))
+        rec_box.add_widget(_vbox(self.monthly, Label(text="Monthly")))
 
         btn_box = BoxLayout(orientation="horizontal")
         self.cancel = Button(text="Cancel")
@@ -181,8 +187,7 @@ class EditDialog:
             return 'weekly'
         elif self.monthly.active:
             return 'monthly'
-        elif self.annually.active:
-            return 'annually'
+        return 'once'
 
     def on_ok(self):
         Logger.info(f"OK CLICKED")
@@ -201,9 +206,12 @@ class EditDialog:
                 self.reset()
                 self.root.remove_widget(self.container)
                 return
-            self.current_todo['title'] = self.title_input.text
-            self.target_inst.text = m_todo_title(self.current_todo)
-            self.current_todo['body'] = self.body_input.text
+            for k, v in save_res.items():
+                self.current_todo[k] = v
+            for k in list(self.current_todo.keys()):
+                if k not in save_res:
+                    del self.current_todo[k]
+            self.target_inst.text = m_todo_title(save_res)
             if hasattr(self.target_inst, 'body_node') and self.target_inst.body_node is not None:
                 Logger.info("HAS BODY_NODE")
                 if not self.current_todo['body']:
@@ -241,8 +249,6 @@ class EditDialog:
                 self.weekly.active = True
             elif recr == 'monthly':
                 self.monthly.active = True
-            elif recr == 'annually':
-                self.annually.active = True
             else:
                 self.one_time.active = True
         else:
@@ -259,13 +265,17 @@ class TodoTree:
         self.remove()
         self.render(todos, filter)
 
+    def _maybe_node_id(self, node, fn):
+        if (tid := getattr(node, 'todo_id', None)) is not None:
+            return fn(tid)
+
     def render(self, todos, filter=None):
         self.scroll = ScrollView(do_scroll_x=False, do_scroll_y=True) # size=(Window.width, Window.height)
         self.tree = TreeView(
             hide_root=True, pos=self.pos, # size_hint=(0.9, 1),
             size_hint_y=None, height=self.scroll.height / 2,
-            on_node_expand=lambda inst, node: Logger.info(f"EXPANDING {getattr(node, 'todo_id', None)} -- {node}"),
-            on_node_collapse=lambda inst, node: Logger.info(f"COLLAPSING {getattr(node, 'todo_id', None)} -- {node}")
+            on_node_expand=lambda inst, node: self._maybe_node_id(node, model.todo_expand),
+            on_node_collapse=lambda inst, node: self._maybe_node_id(node, model.todo_collapse)
         )
         self.tree.show_note_dialog = self.show_note_dialog
         for todo in todos:
@@ -310,6 +320,13 @@ class TodoTree:
 
 def Filters(parent, tree):
     box = BoxLayout(orientation="horizontal", pos=(0,0), size_hint=(1, 0.1))
+
+    # for name, active in model.ui_filters():
+    #     chk = CheckBox(active=active)
+    #     chk.bind(active=lambda inst, val: _update_tree())
+    #     box.add_widget(Label(text=name))
+    #     box.add_widget(chk)
+
     tags = ["Unchecked", "Checked", "Deleted"]
     checks = [
         CheckBox(active=True),
