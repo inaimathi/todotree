@@ -32,11 +32,14 @@ def init():
         ]))
         cur.execute(sql.createQ("ui_filters", [
             "id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL",
-            "name TEXT", "checked INTEGER"
+            "name TEXT UNIQUE", "checked INTEGER"
         ]))
-        cur.execute(*sql.insertQ("ui_filters", name="Unchecked", checked=True))
-        cur.execute(*sql.insertQ("ui_filters", name="Checked", checked=True))
-        cur.execute(*sql.insertQ("ui_filters", name="Deleted"))
+        try:
+            cur.execute(*sql.insertQ("ui_filters", name="Unchecked", checked=True))
+            cur.execute(*sql.insertQ("ui_filters", name="Checked", checked=True))
+            cur.execute(*sql.insertQ("ui_filters", name="Deleted"))
+        except sqlite3.IntegrityError:
+            pass
 
 def _drop():
     with CONN as cur:
@@ -199,12 +202,13 @@ def todo_expand(todo_id):
         c.execute(*sql.insertQ("ui_expand", todo_id=todo_id))
 
 def expanded_todos():
-    return {el['todo_id'] for el in select("expand", "todo_id")}
+    return {el['todo_id'] for el in select("ui_expand", "todo_id")}
 
-def ui_filter_update(filter_name, state):
+def ui_filter_update(filter_map):
     with CONN as cur:
         c = cur.cursor()
-        c.execute(*sql.updateQ("ui_filters", checked=state, where={"name": filter_name}))
+        for name, checked in filter_map.items():
+            c.execute(*sql.updateQ("ui_filters", checked=checked, where={"name": name}))
 
 def ui_filters():
     return {el['name']: bool(el['checked']) for el in  select("ui_filters", "*")}

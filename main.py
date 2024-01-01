@@ -254,12 +254,25 @@ class EditDialog:
         else:
             self.one_time.active = True
 
+def _filter_from_state():
+    filters = model.ui_filters()
+    Logger.info(f"FILTERS: {filters}")
+    def _filter_todo(todo):
+        if filters['Deleted'] and todo['deleted']:
+            return True
+        elif not todo['deleted']:
+            return (
+                (filters['Unchecked'] and not model.todo_checked_p(todo))
+                or (filters['Checked'] and model.todo_checked_p(todo))
+            )
+    return _filter_todo
+
 class TodoTree:
     def __init__(self, parent, pos=None, **rest):
         self.parent = parent
         self.pos = pos or (0,0)
         self.dialog = EditDialog(parent)
-        self.render(model.todo_tree(), lambda t: not t['deleted'])
+        self.render(model.todo_tree(), _filter_from_state())
 
     def re_render(self, todos, filter=None):
         self.remove()
@@ -317,43 +330,25 @@ class TodoTree:
             Logger.info("  -- EXPLOSION")
             pass
 
-
 def Filters(parent, tree):
     box = BoxLayout(orientation="horizontal", pos=(0,0), size_hint=(1, 0.1))
 
-    # for name, active in model.ui_filters():
-    #     chk = CheckBox(active=active)
-    #     chk.bind(active=lambda inst, val: _update_tree())
-    #     box.add_widget(Label(text=name))
-    #     box.add_widget(chk)
-
-    tags = ["Unchecked", "Checked", "Deleted"]
-    checks = [
-        CheckBox(active=True),
-        CheckBox(active=True),
-        CheckBox()
-    ]
+    checks = []
+    initial_state = model.ui_filters()
 
     def _update_tree():
         unchecked, checked, deleted = [c.active for c in checks]
-        def _filter_todo(todo):
-            if deleted and todo['deleted']:
-                return True
-            elif not todo['deleted']:
-                return (
-                    (unchecked and not model.todo_checked_p(todo))
-                    or (checked and model.todo_checked_p(todo))
-                )
-
-        Logger.info(f"FILTER CLICKED = {(unchecked, checked, deleted)}")
-        tree.re_render(model.todo_tree(), _filter_todo)
+        model.ui_filter_update({"Unchecked": unchecked, "Checked": checked, "Deleted": deleted})
+        tree.re_render(model.todo_tree(), _filter_from_state())
         parent.remove_widget(box)
         parent.add_widget(box)
 
-    for lbl, c in zip(tags, checks):
-        c.bind(active=lambda inst, val: _update_tree())
-        box.add_widget(Label(text=lbl))
-        box.add_widget(c)
+    for name, active in initial_state.items():
+        chk = CheckBox(active=active)
+        checks.append(chk)
+        chk.bind(active=lambda inst, val: _update_tree())
+        box.add_widget(Label(text=name))
+        box.add_widget(chk)
 
     parent.add_widget(box)
     return box
