@@ -69,16 +69,25 @@ def _link(inst, ref, todo):
     else:
         inst.show_note_dialog(inst, todo)
 
+def body_text(todo):
+    res = []
+    if todo['recurrence']:
+        res.append(f"Total : {len(todo['checked_at'])}")
+        res.append(f"Streak: [font=Inconsolata]{''.join(['[x]'] * model.todo_streak(todo))}[ ][/font]")
+    if todo['body']:
+        res.append(f"[ref=edit][i]{todo['body']}[/i][/ref]")
+    return '\n'.join(res)
 
 def add_todo_body(node, todo):
-    if todo['body']:
+    if todo['body'] or todo['recurrence']:
         body_node = TreeViewLabel(
-            text=f"[ref=edit][i]{todo['body']}[/i][/ref]",
+            text=body_text(todo),
             markup=True,
             on_ref_press=lambda inst, ev: _link(inst, ev, todo))
         node.root.add_node(body_node, node)
         body_node.show_note_dialog = node.show_note_dialog
         node.body_node = body_node
+
 
 def add_todo_node(root, parent, todo):
     node = root.add_node(TreeViewLabel(

@@ -2,6 +2,10 @@ import datetime
 import re
 
 
+def days_range(start_date, end_date):
+    delta = end_date - start_date
+    return [start_date + datetime.timedelta(days=i) for i in range(delta.days + 1)]
+
 def delta_hours(delta):
     return (delta.total_seconds() / 60) / 60
 

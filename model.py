@@ -1,3 +1,4 @@
+import itertools
 import os
 import sqlite3
 from collections import defaultdict
@@ -124,6 +125,18 @@ def todo_add(title, body=None, recurrence=None, parent_id=None):
             ins["parent_id"] = parent_id
         c.execute(*sql.insertQ("todos", **ins))
         return todo_by(c.lastrowid)
+
+def todo_streak(todo):
+    if not todo['recurrence']:
+        return None
+    checked = set(dt.date() for dt in todo['checked_at'])
+    checked_p = [
+        (day.date() in checked)
+        for day
+        in recurr.days_range(todo['created'], datetime.now())
+    ]
+    streak = list(itertools.takewhile(lambda t: t, reversed(checked_p)))
+    return len(streak)
 
 def todo_checked_p(todo):
     if todo['recurrence'] and todo['checked_at']:
