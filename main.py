@@ -30,12 +30,14 @@ LabelBase.register(
 
 __version__ = "0.0.0"
 
-OPEN = model.expanded_todos()
+OPEN = {}
 
 def initialize():
+    global OPEN
     Logger.info(f" == v{__version__}")
     Logger.info(" === initializing model...")
     model.init()
+    OPEN = model.expanded_todos()
 
 NODE_HELD = False
 _REC_COLORS = {
@@ -166,7 +168,8 @@ class EditDialog:
 
     def on_delete(self):
         model.todo_update(self.current_todo['id'], delete=True)
-        self.target_inst.root.remove_node(self.target_inst)
+        if not model.ui_filters()['Deleted']:
+            self.target_inst.root.remove_node(self.target_inst)
         self.root.remove_widget(self.container)
 
     def reset(self):
@@ -256,7 +259,6 @@ class EditDialog:
 
 def _filter_from_state():
     filters = model.ui_filters()
-    Logger.info(f"FILTERS: {filters}")
     def _filter_todo(todo):
         if filters['Deleted'] and todo['deleted']:
             return True
@@ -275,6 +277,8 @@ class TodoTree:
         self.render(model.todo_tree(), _filter_from_state())
 
     def re_render(self, todos, filter=None):
+        global OPEN
+        OPEN = model.expanded_todos()
         self.remove()
         self.render(todos, filter)
 
@@ -319,12 +323,12 @@ class TodoTree:
                     self.tree.remove_node(tmp),
                     add_todo_node(inst.root, None, todo),
                     self.tree.add_node(tmp)
-                ))
+                )[0])
             else:
                 self.dialog.edit(inst, None, lambda changes: (
                     todo := model.todo_add(changes['title'], body=changes.get('body'), recurrence=changes.get('recurrence'), parent_id=parent_id),
                     add_todo_node(inst.root, inst, todo),
-                ))
+                )[0])
             self.parent.add_widget(self.dialog.container)
         except kivy.uix.widget.WidgetException:
             Logger.info("  -- EXPLOSION")

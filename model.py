@@ -135,8 +135,10 @@ def todo_add(title, body=None, recurrence=None, parent_id=None):
     with CONN as cur:
         c = cur.cursor()
         ins = {"title": title, "body": body}
+        if recurrence == "once":
+            recurrence = None
         if recurrence is not None:
-            assert recurr.validate(recurrence)
+            assert recurr.validate(recurrence), f"Invalid recurrence: {recurrence}"
             ins["recurrence"] = recurrence
         if parent_id is not None:
             assert todo_by(parent_id)
