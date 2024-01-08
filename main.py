@@ -167,9 +167,11 @@ class EditDialog:
         btn_box.add_widget(self.ok)
 
     def on_delete(self):
-        model.todo_update(self.current_todo['id'], delete=not self.current_todo['deleted'])
-        if not model.ui_filters()['Deleted']:
+        deleted = not self.current_todo['deleted']
+        model.todo_update(self.current_todo['id'], delete=deleted)
+        if not (model.ui_filters()['Deleted'] == deleted):
             self.target_inst.root.remove_node(self.target_inst)
+        self.reset()
         self.root.remove_widget(self.container)
 
     def reset(self):
