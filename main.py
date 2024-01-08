@@ -28,7 +28,7 @@ LabelBase.register(
     fn_bolditalic="./fonts/Inconsolata_ExtraExpanded-Light.ttf"
 )
 
-__version__ = "0.0.0"
+__version__ = "0.0.1"
 
 OPEN = {}
 
@@ -47,7 +47,7 @@ _REC_COLORS = {
 }
 
 def m_todo_title(todo):
-    title = f"[ref=title]{todo['title']}[/ref]"
+    title = f"[ref=title]{todo['title'].strip() or '__________'}[/ref]"
     checked = model.todo_checked_p(todo)
     if checked:
         title = f"[s]{title}[/s]"

@@ -4,10 +4,12 @@ import sqlite3
 from collections import defaultdict
 from datetime import datetime
 
+import plyer
+
 import recurrence as recurr
 import sql
 
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "todotree.db")
+DB_PATH = os.path.join(plyer.storagepath.get_documents_dir(), "todotree.db")
 CONN = sqlite3.connect(DB_PATH)
 
 def init():
